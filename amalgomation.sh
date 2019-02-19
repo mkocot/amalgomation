@@ -1,19 +1,23 @@
 #!/bin/sh
-
+set -u
 
 my_where=
+my_app_name="amalgomation"
+my_force_overwrite=no
 
 while true; do
     my_arg=${1-}
     
-    if [ -z ${my_arg} ]; then
-        break;
-    fi
+    [ ! "${my_arg}" ] && \
+        break
 
     case ${my_arg} in
         "--temp") shift
                   my_tmp=${1-}
                   echo x$my_tmp;;
+        -o|--output) shift
+              my_app_name=${1-} ;;
+        -f) my_force_overwrite='' ;;
         -*) echo "Unrecognized option ${my_arg}"
             exit 1 ;;
         *) echo "Add search path: ${my_arg}"
@@ -22,15 +26,17 @@ while true; do
     shift 2>/dev/null || break
 done
 
+echo "Output name: ${my_app_name}"
+
+# check if file exists
+[ "${my_force_overwrite}" -a -e "${my_app_name}" ] && \
+    echo "File already exists" && exit 1
+
 # helper functions
 my_copy() {
     from=${1}
     cp -r ${from} ${my_tmp}/
     echo $(basename ${from})
-}
-
-my_seed() {
-    echo "unimplemented"
 }
 
 my_prepare_src() {
@@ -43,11 +49,11 @@ my_prepare_src() {
 my_commands=
 
 for path in ${my_where}; do
-    my_commands="${my_commands} $(find ${my_where}/cmd -mindepth 1 -type d)"
+    expand=$(find ${path}/cmd -mindepth 1 -type d)
+    [ $? -eq 0 ] && my_commands="${my_commands} $expand"
 done
 
-
-if [ -z ${my_commands} ]; then
+if [ -z "${my_commands}" ]; then
     echo "No cmd dirs found in given path(s)"
     exit 1
 fi
@@ -71,7 +77,6 @@ for my_cmd in ${my_commands}; do
     my_id=$((${my_id}+1))
 done
 
-my_app_name="amalgomation"
 
 echo "Generating main.go"
 
@@ -106,6 +111,7 @@ echo ${my_invocations} >> ${my_tmp}/main.go
 cat << EOF >> ${my_tmp}/main.go
         case "${my_app_name}": println("Supported apps:", "${my_apps}")
         default: println("Unknown app", n)
+        println("Supported apps:", "${my_apps}")
     }
 }
 EOF
@@ -114,8 +120,9 @@ echo "Building"
 
 my_top=${PWD}
 cd ${my_tmp}
-go build -o ${my_app_name} . && cp ${my_app_name} ${my_top}/ || echo "Build failed"
+go build ${GOFLAGS:-} -o ${my_app_name} . && cp ${my_app_name} ${my_top}/ || echo "Build failed"
 
 # cleanup tmp directory
 rm -rf ${my_tmp}
 echo "done"
+
